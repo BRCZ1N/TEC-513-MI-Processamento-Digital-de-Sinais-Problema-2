@@ -8,7 +8,7 @@ const byte adcPin = 0;              // A0  <=  ATMega 2560 A0 pin for ADC0
 
 const int MAX_RESULTS = 2560;       // size for store data to be sent
 
-volatile int results [MAX_RESULTS]; // data vector
+volatile byte results [MAX_RESULTS]; // data vector
 volatile int resultNumber; 
 
 // ADC complete ISR
@@ -17,7 +17,7 @@ ISR (ADC_vect)
   if (resultNumber >= MAX_RESULTS)
     ADCSRA = 0;  // turn off ADC
   else
-    results [resultNumber++] = ADC;
+    results [resultNumber++] = ADCH;
   }  // end of ADC_vect
   
 EMPTY_INTERRUPT (TIMER1_COMPB_vect);
@@ -27,7 +27,7 @@ void ADC_init() {
   ADCSRA =  bit (ADEN) | bit (ADIE) | bit (ADIF);   // turn ADC on, want interrupt on completion
   //ADCSRA |= bit (ADPS2) | bit (ADPS1) | bit (ADPS0); // Prescaler of 128  // 16MHz/128 = 125kHz the ADC reference clock
   ADCSRA |= bit (ADPS2);  // Prescaler of 16  // 16MHz/16 = 1MHz the ADC reference clock 
-  ADMUX = bit (REFS0) | (adcPin & 7); //Set Voltage reference to Avcc (5v)
+  ADMUX = bit (REFS0) | bit (ADLAR) | (adcPin & 7); //Set Voltage reference to Avcc (5v)
   ADCSRB = bit (ADTS0) | bit (ADTS2);  // Timer/Counter1 Compare Match B
   ADCSRA |= bit (ADATE);   // turn on automatic triggering
 } //Do an initial conversion
@@ -43,8 +43,8 @@ void timer(){
   TIMSK1 = bit (OCIE1B);  // WTF?     OCIE1B => 1    Timer/Countern, Output Compare B Match Interrupt Enable   When this bit is written to one, 
                                       //and the I-flag in the Status Register is set (interrupts globally enabled), the Timer/Countern Output Compare B Match interrupt is enabled. 
                                       // The corresponding Interrupt Vector (see “Interrupts” on page 101) is executed when the OCFnB Flag, located in TIFRn, is set.
-  OCR1A = 999;    // (16MhZ / (8*sampling freq)-1),  if samplinf freq = 125kHz = OCR1A = 15
-  OCR1B = 999;   // sampling frequency // OCR1A  39 for 50kHz sampling freq. // = 99 for 20 kHz // = 199 for 10kHz // = 399 for 5kHz // 999 for 2kHz // 
+  OCR1A = 38;    // (16MhZ / (8*sampling freq)-1),  if samplinf freq = 125kHz = OCR1A = 15
+  OCR1B = 38;   // sampling frequency // OCR1A  39 for 50kHz sampling freq. // = 99 for 20 kHz // = 199 for 10kHz // = 399 for 5kHz // 999 for 2kHz // 
   
   // if (16MhZ / (128*sampling freq)-1) ,  for 128 prescaler  is 124 for 1kHz
 }
