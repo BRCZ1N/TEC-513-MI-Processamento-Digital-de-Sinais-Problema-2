@@ -24,12 +24,12 @@ end
 MODO      = 'arquivo';             % 'serial' (Arduino) ou 'arquivo' (csv salvo)
 %PORTA     = 'COM5';              % WINDOWS - Abre a porta serial que esta no microcontrolador
 PORTA     = "/dev/ttyUSB0";       % LINUX - Abre a porta serial que esta no microcontrolador
-ARQUIVO   = 'captura.csv';
+ARQUIVO   = 'captura_2_2.5V.csv';
 FS        = 16e6/(8*(38+1));      % fs nominal: OCR1A = 38 -> 51 282 SPS
 F_GERADOR = 100;                  % frequência do gerador (Hz)
 VREF      = 5.0;                  % AVcc medido
 VIN_MIN   = 0.0;                  % extremos da triangular (osciloscópio)
-VIN_MAX = 5.0;
+VIN_MAX = 2.5;
 Q         = VREF/256;             % degrau de quantização (8 bits)
 
 %% 1) Recepção dos dados (requisitos 3 e 4)
@@ -79,7 +79,9 @@ xlim([0 30]);
 title('Sinal capturado x triangular ideal');
 legend('Real', 'Ideal');
 subplot(2,1,2);                                   % zoom: entrada, amostras e retenção
-j = find(c_id >= 128, 1) + (-8:8);
+meio = round((min(c) + max(c))/2);                                        % meio da faixa capturada
+sobe_meio = find(c_id(9:end-9) < meio & c_id(10:end-8) >= meio, 1) + 9;  % 1ª subida pelo meio
+j = sobe_meio + (-8:8);
 plot(t(j)*1e3, v_id(j), 'k');
 hold on;
 plot(t(j)*1e3, c(j)*Q, 'bo', 'markerfacecolor', 'b');   % amostras (antes era o stem)
