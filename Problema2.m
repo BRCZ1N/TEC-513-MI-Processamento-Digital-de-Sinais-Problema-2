@@ -21,7 +21,7 @@ function [fb, pb] = ajustar(v, t, fs_, ps_, vmin, vmax) % triangular que melhor 
 end
 
 %% Parâmetros
-MODO      = 'serial';             % 'serial' (Arduino) ou 'arquivo' (csv salvo)
+MODO      = 'arquivo';             % 'serial' (Arduino) ou 'arquivo' (csv salvo)
 %PORTA     = 'COM5';              % WINDOWS - Abre a porta serial que esta no microcontrolador
 PORTA     = "/dev/ttyUSB0";       % LINUX - Abre a porta serial que esta no microcontrolador
 ARQUIVO   = 'captura.csv';
@@ -118,7 +118,7 @@ h = accumarray(c(completa) + 1, 1, [256 1]);      % h(k+1) = amostras do código
 T = VIN_MIN + (VIN_MAX - VIN_MIN)*cumsum(h(1:255))/sum(h);   % transição k-1 -> k (V)
 Qr       = (T(255) - T(1))/254;                   % degrau médio real
 offset   = (T(1) - Q)/Q;                          % LSB (transição ideal 0->1 em Q)
-ganho    = (Qr/Q - 1)*100;                        % %
+ganho    = (Qr/Q - 1)*100;                        %
 dnl      = diff(T)/Qr - 1;                        % códigos 1..254 (LSB)
 inl      = (T - (T(1) + (0:254)'*Qr))/Qr;         % transições 1..255 (LSB)
 ausentes = find(h(2:255) == 0)';                  % códigos 1..254 sem amostra
