@@ -2,8 +2,8 @@
 clc;
 clear;
 close all;
-pkg load signal
 pkg load instrument-control
+if ~isempty(mfilename), cd(fileparts(mfilename('fullpath'))); end   % roda na pasta do script
 
 function v = triangular(t, f, fase, vmin, vmax)       % triangular ideal
   fr = mod(f*t + fase, 1);
@@ -21,31 +21,37 @@ function [fb, pb] = ajustar(v, t, fs_, ps_, vmin, vmax) % triangular que melhor 
 end
 
 %% Parâmetros
-MODO      = 'serial';            % 'serial' (Arduino) ou 'arquivo' (csv salvo)
-PORTA     = 'COM5';               % ver em Ferramentas > Porta na IDE do Arduino
+MODO      = 'serial';             % 'serial' (Arduino) ou 'arquivo' (csv salvo)
+%PORTA     = 'COM5';              % WINDOWS - Abre a porta serial que esta no microcontrolador
+PORTA     = "/dev/ttyUSB0";       % LINUX - Abre a porta serial que esta no microcontrolador
 ARQUIVO   = 'captura.csv';
 FS        = 16e6/(8*(38+1));      % fs nominal: OCR1A = 38 -> 51 282 SPS
 F_GERADOR = 100;                  % frequência do gerador (Hz)
 VREF      = 5.0;                  % AVcc medido
-VIN_MIN   = 0.0;  VIN_MAX = 5.0;  % extremos da triangular (osciloscópio)
+VIN_MIN   = 0.0;                  % extremos da triangular (osciloscópio)
+VIN_MAX = 5.0;
 Q         = VREF/256;             % degrau de quantização (8 bits)
 
 %% 1) Recepção dos dados (requisitos 3 e 4)
 if strcmp(MODO, 'serial')
-  s = serialport(PORTA, 2000000);
-  pause(2.5);                                     % Arduino reinicia, captura e envia
-  buf = [];
-  ult = tic;
-  while toc(ult) < 0.5 || isempty(buf)            % lê até parar de chegar dado
-    if s.NumBytesAvailable > 0
-      buf = [buf; read(s, s.NumBytesAvailable, 'uint8')(:)];
-      ult = tic;
-    end
+  s1 = serial(PORTA);                 % abre a porta serial do microcontrolador
+  set(s1,'baudrate',2000000);         % velocidade de transmissão 2 Mbps (igual ao .ino)
+  set(s1,'bytesize',8);               % 8 bits de dados
+  set(s1,'parity','n');               % sem paridade
+  set(s1,'stopbits',1);               % 1 bit de parada
+  set(s1,'timeout',10);               % 1 s sem dados = fim da transmissão (décimos de s)
+  pause(2);                           % Arduino reinicia, captura e envia
+  raw = [];                           % dados crus recebidos pela USB
+  while true
+    data = fread(s1, 4096);           % lê em blocos até parar de chegar dado
+    if isempty(data), break; end
+    raw = [raw; data(:)];
   end
-  clear s;
-  c = str2double(strsplit(strtrim(char(buf')), "\n"))';
-  c = c(~isnan(c));                               % remove linhas vazias
-  csvwrite(ARQUIVO, c);
+  fclose(s1);                         % fecha a porta de comunicação
+  c = str2double(strsplit(strtrim(char(raw')), "\n"))';   % texto -> números
+  c = c(~isnan(c));                   % remove a linha vazia inicial
+  printf('Amostras recebidas: %d\n', numel(c));
+  csvwrite(ARQUIVO, c);               % guarda a captura
 else
   c = csvread(ARQUIVO);
 end
@@ -76,9 +82,10 @@ subplot(2,1,2);                                   % zoom: entrada, amostras e re
 j = find(c_id >= 128, 1) + (-8:8);
 plot(t(j)*1e3, v_id(j), 'k');
 hold on;
-stem(t(j)*1e3, c(j)*Q, 'b', 'filled');
+plot(t(j)*1e3, c(j)*Q, 'bo', 'markerfacecolor', 'b');   % amostras (antes era o stem)
 stairs(t(j)*1e3, c(j)*Q, 'r');
 stairs(t(j)*1e3, c_id(j)*Q, 'g--');
+ylim([min(c(j))-2, max(c(j))+2]*Q);                     % nova: aproxima nos degraus
 grid on; xlabel('Tempo (ms)');
 ylabel('Tensão (V)');
 title('Zoom: entrada, amostras e retenção');
@@ -145,18 +152,18 @@ print(4, 'fig4_dnl_inl.png', '-dpng', '-r150');
 
 figure(5);                                        % curva de transferência: início e fim
 subplot(1,2,1);
-stairs([0; T(1:8)], 0:8, 'b');
+stairs([0; T(1:8)], (0:8)', 'b');
 hold on;
-stairs((0:8)*Q, 0:8, 'r--');
+stairs((0:8)'*Q, (0:8)', 'r--');
 grid on;
 xlabel('Entrada (V)');
 ylabel('Código');
 title(sprintf('Offset: %.2f LSB', offset));
 legend('Real', 'Ideal', 'location', 'northwest');
 subplot(1,2,2);
-stairs(T(247:255), 247:255, 'b');
+stairs(T(247:255), (247:255)', 'b');
 hold on;
-stairs((247:255)*Q, 247:255, 'r--');
+stairs((247:255)'*Q, (247:255)', 'r--');
 grid on;
 xlabel('Entrada (V)');
 title(sprintf('Ganho: %.2f%%', ganho));

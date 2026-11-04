@@ -6,7 +6,7 @@
 
 const byte adcPin = 0;              // A0  <=  ATMega 2560 A0 pin for ADC0
 
-const int MAX_RESULTS = 2560;       // size for store data to be sent
+const int MAX_RESULTS = 5128;       // size for store data to be sent
 
 volatile byte results [MAX_RESULTS]; // data vector
 volatile int resultNumber; 

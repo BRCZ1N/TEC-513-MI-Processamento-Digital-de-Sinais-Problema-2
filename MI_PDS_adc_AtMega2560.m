@@ -15,13 +15,14 @@ pkg load instrument-control		%biblioteca para comunicação serial
 
 %%%%%%%%%%%%%%%%%%% ALOCAÇÃO DE VARIÁVEIS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 MAX_RESULTS=2560;
-fs=50000;    % Aqui ajusta a frequência de amostragem usada no processo na ADC
+fs=51282;    % Aqui ajusta a frequência de amostragem usada no processo na ADC
 amostras = 1000;  % Quantidade a amostras que irá usar para visualizar na tela
 raw = [];				 % variavel para armazenar os dados cru recebido pela USB (raw)
 
 %%%%%%%%%%%%%%%%%%% ABERTURA DA PORTA SERIAL %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-s1 = serial("COM3"); 	    		%Abre a porta serial que esta no microcontrolador
-set(s1,'baudrate',115200);		%velocidade de transmissão 2Mbps
+s1 = serial("/dev/ttyUSB0"); 	    		% LINUX - Abre a porta serial que esta no microcontrolador
+%s1 = serial("COM3"); 	    		      % WINDOWS - Abre a porta serial que esta no microcontrolador
+set(s1,'baudrate',2000000);		%velocidade de transmissão 2Mbps
 set(s1,'bytesize',8); 			  %8 bits de dados
 set(s1,'parity','n'); 			  %sem paridade ('y' 'n')
 set(s1,'stopbits',1); 			  %1 bit de parada (1 ou 2)
@@ -51,7 +52,7 @@ tic;							    %captura do tempo inicial
   time=[(0:1:length(d)-1)/fs];  %tamanhos do dominio normalizado
 
   subplot(3,1,1);           %plotando as figuras
-  plot(time,d*5/1023)   %plota as amostras interpoladas
+  plot(time,d*5/256)   %plota as amostras interpoladas
   xlabel('t(s)');
   title('Sinal gerado x(t)');
   subplot(3,1,2);
