@@ -21,7 +21,7 @@ function [fb, pb] = ajustar(v, t, fs_, ps_, vmin, vmax) % triangular que melhor 
 end
 
 %% Parâmetros
-MODO      = 'arquivo';             % 'serial' (Arduino) ou 'arquivo' (csv salvo)
+MODO      = 'serial';             % 'serial' (Arduino) ou 'arquivo' (csv salvo)
 %PORTA     = 'COM5';              % WINDOWS - Abre a porta serial que esta no microcontrolador
 PORTA     = "/dev/ttyUSB0";       % LINUX - Abre a porta serial que esta no microcontrolador
 ARQUIVO   = 'captura.csv';
