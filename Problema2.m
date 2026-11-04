@@ -50,7 +50,7 @@ MODO     = 'arquivo';           % 'serial' = captura com o Arduino
                                 % 'arquivo' = usa um .csv já salvo
 %PORTA   = 'COM5';              % Windows
 PORTA    = "/dev/ttyUSB0";      % Linux
-ARQUIVO  = 'captura_2_2.5V.csv';% onde a captura é salva (ou lida)
+ARQUIVO  = 'captura_1_2.5V.csv';% onde a captura é salva (ou lida)
 
 % Medidas feitas no laboratório
 VREF     = 5.0;                 % AVcc medido com multímetro (V)
@@ -176,9 +176,9 @@ metade  = 1:floor(N/2);                     % só frequências positivas
 ref     = max(xIdeal);                      % 0 dB = fundamental ideal
 
 figure(2);
-plot(freq(metade), 20*log10(xReal(metade)/ref), 'b');
+stem(freq(metade), 20*log10(xReal(metade)/ref), 'b', 'marker', 'none', 'basevalue', -100);
 hold on;
-plot(freq(metade), 20*log10(xIdeal(metade)/ref), 'r--');
+stem(freq(metade), 20*log10(xIdeal(metade)/ref), 'r', 'marker', 'none', 'basevalue', -100);
 grid on;
 xlim([0 4000]);
 ylim([-100 5]);
