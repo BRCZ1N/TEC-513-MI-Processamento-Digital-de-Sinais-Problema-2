@@ -50,12 +50,12 @@ MODO     = 'arquivo';           % 'serial' = captura com o Arduino
                                 % 'arquivo' = usa um .csv já salvo
 %PORTA   = 'COM5';              % Windows
 PORTA    = "/dev/ttyUSB0";      % Linux
-ARQUIVO  = 'captura_1_2.5V.csv';% onde a captura é salva (ou lida)
+ARQUIVO  = 'captura_1_2.5V_50Ohms.csv';% onde a captura é salva (ou lida)
 
 % Medidas feitas no laboratório
 VREF     = 5.0;                 % AVcc medido com multímetro (V)
 VIN_MIN  = 0.0;                 % mínimo da triangular no osciloscópio (V)
-VIN_MAX  = 2.5;                 % máximo da triangular no osciloscópio (V)
+VIN_MAX  = 5.0;                 % máximo da triangular no osciloscópio (V)
 F_GERADOR = 100;                % frequência ajustada no gerador (Hz)
 
 % Valores do projeto
@@ -99,9 +99,6 @@ if strcmp(MODO, 'serial')
 else
   codigos = csvread(ARQUIVO);
 end
-
-% A primeira conversão do ADC é mais lenta (25 ciclos): descarta o início
-codigos = codigos(6:end);
 
 N       = numel(codigos);
 t       = (0:N-1)'/FS;                      % instante de cada amostra (s)
