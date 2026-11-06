@@ -14,6 +14,7 @@ clc;
 clear;
 close all;
 pkg load instrument-control
+pkg load signal
 
 % Faz o Octave trabalhar na pasta do script (onde ficam o .csv e as figuras)
 if ~isempty(mfilename)
@@ -22,26 +23,8 @@ end
 
 % Gera uma onda triangular ideal entre vmin e vmax
 function v = triangular(t, f, fase, vmin, vmax)
-  posicao = mod(f*t + fase, 1);              % posição dentro do período (0 a 1)
-  subida  = posicao < 0.5;                   % primeira metade: subida
-  forma   = 2*posicao.*subida + (2 - 2*posicao).*(~subida);   % vai de 0 a 1 e volta
+  forma = (sawtooth(2*pi*(f*t + fase), 0.5) + 1)/2;   % triangular de 0 a 1
   v = vmin + (vmax - vmin)*forma;
-end
-
-% Procura a frequência e a fase da triangular que mais se aproximam do sinal
-% medido (menor erro quadrático entre as listas de valores testados)
-function [fMelhor, faseMelhor] = ajustarTriangular(v, t, listaF, listaFase, vmin, vmax)
-  menorErro = inf;
-  for f = listaF
-    for fase = listaFase
-      erro = sum((v - triangular(t, f, fase, vmin, vmax)).^2);
-      if erro < menorErro
-        menorErro  = erro;
-        fMelhor    = f;
-        faseMelhor = fase;
-      end
-    end
-  end
 end
 
 
@@ -56,11 +39,10 @@ ARQUIVO  = 'captura_1_2.5V_50Ohms.csv';% onde a captura é salva (ou lida)
 VREF     = 5.0;                 % AVcc medido com multímetro (V)
 VIN_MIN  = 0.0;                 % mínimo da triangular no osciloscópio (V)
 VIN_MAX  = 5.0;                 % máximo da triangular no osciloscópio (V)
-F_GERADOR = 100;                % frequência ajustada no gerador (Hz)
+F_ENTRADA = 100;                % frequência ajustada no gerador (Hz)
 
 % Valores do projeto
-OCR1A    = 38;
-FS       = 16e6/(8*(OCR1A + 1));% taxa de amostragem: 51 282 SPS
+FS       = 51282;               % taxa de amostragem (SPS), definida pelo timer no .ino
 NBITS    = 8;
 NCODIGOS = 2^NBITS;             % 256 códigos (0 a 255)
 Q        = VREF/NCODIGOS;       % degrau de quantização (V)
@@ -75,6 +57,7 @@ if strcmp(MODO, 'serial')
   set(s1, 'parity',   'n');         % sem paridade
   set(s1, 'stopbits', 1);           % 1 bit de parada
   set(s1, 'timeout',  10);          % 1 s sem dados = fim da transmissão (décimos de s)
+  srl_flush(s1);
   pause(2);                         % tempo para o Arduino reiniciar
 
   % Lê em blocos até parar de chegar dado
@@ -100,29 +83,37 @@ else
   codigos = csvread(ARQUIVO);
 end
 
+codigos = codigos(11:end);
 N       = numel(codigos);
 t       = (0:N-1)'/FS;                      % instante de cada amostra (s)
 tMs     = t*1e3;                            % o mesmo, em ms (para os gráficos)
-vReal   = (codigos + 0.5)*Q;                % tensão reconstruída (centro do degrau)
+vReal   = codigos*Q;                        % tensão reconstruída
 
 
 %% ===================== 2) TRIANGULAR IDEAL SIMULADA (requisito 5) =========
-% O gerador nunca está exatamente em 100 Hz e a captura começa numa fase
-% qualquer: por isso a triangular ideal é ajustada ao sinal real.
+% O gerador nunca está exatamente na frequência nominal e a captura começa numa
+% fase qualquer: por isso a frequência e a fase da triangular ideal são
+% ajustadas ao sinal real, minimizando o erro quadrático entre os dois.
 
-% Busca grossa: frequência entre 97% e 103% do gerador, fase de 0 a 1
-listaF    = F_GERADOR*(0.97:0.0005:1.03);
-listaFase = 0:0.005:1;
-[fEst, fase] = ajustarTriangular(vReal, t, listaF, listaFase, VIN_MIN, VIN_MAX);
+% Erro quadrático entre o sinal medido e uma triangular com p = [frequência, fase]
+erroQuad = @(p) sum((vReal - triangular(t, p(1), p(2), VIN_MIN, VIN_MAX)).^2);
 
-% Busca fina em torno do resultado anterior
-listaF    = fEst + (-0.05:0.005:0.05);
-listaFase = fase  + (-0.005:0.0002:0.005);
-[fEst, fase] = ajustarTriangular(vReal, t, listaF, listaFase, VIN_MIN, VIN_MAX);
+% Chute inicial: frequência nominal e, entre 100 fases de 0 a 1, a de menor erro
+listaFase = 0:0.01:1;
+erros     = arrayfun(@(fase) erroQuad([F_ENTRADA, fase]), listaFase);
+[~, iMin] = min(erros);
+
+% fminsearch (método de Nelder-Mead) refina a frequência e a fase juntas
+opcoes = optimset('TolX', 1e-8, 'TolFun', 1e-10);
+p      = fminsearch(erroQuad, [F_ENTRADA, listaFase(iMin)], opcoes);
+fEst   = p(1);
+fase   = p(2);
 
 vIdeal      = triangular(t, fEst, fase, VIN_MIN, VIN_MAX);    % entrada analógica ideal
 codigoIdeal = min(max(floor(vIdeal/Q), 0), NCODIGOS - 1);    % saída de um ADC ideal
 
+printf('Frequência estimada: %.3f Hz\n', fEst);
+printf('Fase: %.3f do período (%.1f graus)\n', mod(fase,1), mod(fase,1)*360);
 
 %% ===================== 3) COMPARAÇÃO NO TEMPO (requisito 4) ===============
 figure(1);
@@ -163,25 +154,28 @@ print(1, 'fig1_osciloscopio.png', '-dpng', '-r150');
 
 
 %% ===================== 4) COMPARAÇÃO NA FREQUÊNCIA (requisito 4) ==========
-janelaHann = 0.5 - 0.5*cos(2*pi*(0:N-1)'/(N-1));   % reduz o vazamento espectral
+% Corta o sinal em um número inteiro de períodos para evitar vazamento espectral
+amostrasPorPeriodo = FS/fEst;                         % amostras em 1 período
+nPeriodos = floor(N/amostrasPorPeriodo);              % períodos completos que cabem
+M = round(nPeriodos*amostrasPorPeriodo);              % tamanho do corte
 
-xReal  = abs(fft((vReal  - mean(vReal )).*janelaHann));
-xIdeal = abs(fft((vIdeal - mean(vIdeal)).*janelaHann));
+xReal  = abs(fft(vReal(1:M)  - mean(vReal(1:M))));
+xIdeal = abs(fft(vIdeal(1:M) - mean(vIdeal(1:M))));
 
-freq    = (0:N-1)'*FS/N;                    % eixo de frequência (Hz)
-metade  = 1:floor(N/2);                     % só frequências positivas
+freq    = (0:M-1)'*FS/M;                    % eixo de frequência (Hz)
+metade  = 1:floor(M/2);                     % só frequências positivas
 ref     = max(xIdeal);                      % 0 dB = fundamental ideal
 
 figure(2);
-stem(freq(metade), 20*log10(xReal(metade)/ref), 'b', 'marker', 'none', 'basevalue', -100);
+stem(freq(metade), 20*log10(xReal(metade)/ref + eps), 'b', 'marker', 'none', 'basevalue', -100);
 hold on;
-stem(freq(metade), 20*log10(xIdeal(metade)/ref), 'r', 'marker', 'none', 'basevalue', -100);
+stem(freq(metade), 20*log10(xIdeal(metade)/ref + eps), 'r', 'marker', 'none', 'basevalue', -100);
 grid on;
-xlim([0 4000]);
+xlim([0 1000]);
 ylim([-100 5]);
 xlabel('Frequência (Hz)');
 ylabel('Magnitude (dB)');
-title('Espectro: real x ideal');
+title(sprintf('Espectro: real x ideal (%d períodos inteiros)', nPeriodos));
 legend('Real', 'Ideal');
 
 print(2, 'fig2_fft.png', '-dpng', '-r150');
@@ -275,9 +269,24 @@ xlabel('Entrada (V)');
 title(sprintf('Ganho: %.2f%%', ganhoPct));
 print(5, 'fig5_offset_ganho.png', '-dpng', '-r150');
 
+h = 1:10;                          % harmônicas 1f a 10f
+k = h*nPeriodos + 1;               % bin de cada harmônica
+figure(6);
+stem(h*fEst, 20*log10(xReal(k)/ref + eps), 'b', 'filled', 'basevalue', -100);
+hold on;
+plot(h*fEst, 20*log10(xIdeal(k)/ref + eps), 'rx', 'markersize', 10, 'linewidth', 2);
+grid on;
+set(gca, 'xtick', h*fEst, 'xticklabel', arrayfun(@(x) sprintf('%df', x), h, 'UniformOutput', false));
+xlim([0 11*fEst]);
+ylim([-100 5]);
+xlabel('Frequência (Hz)');
+ylabel('Magnitude (dB)');
+title('Harmônicas: real x ideal');
+legend('Real', 'Ideal');
+
 
 %% ===================== 6) RESUMO (requisitos 5 e 6) =====================
-fsMedida = FS*F_GERADOR/fEst;   % se o gerador está certo, mede a fs real
+fsMedida = FS*F_ENTRADA/fEst;   % se o gerador está certo, mede a fs real
 
 printf('\n--- Erros estáticos (Q = %.2f mV) ---\n', Q*1e3);
 printf('Offset: %.2f LSB\n', offsetLsb);
@@ -289,6 +298,4 @@ printf('Monotônico: %d (1 = sim)\n', monotonico);
 
 printf('\n--- Características dinâmicas ---\n');
 printf('Faixa dinâmica (8 bits): %.1f dB\n', 20*log10(NCODIGOS));
-printf('Tempo de conversão (datasheet, auto-trigger): 13,5 us\n');
-printf('Taxa máxima (datasheet, auto-trigger): 74,1 kSPS\n');
 printf('Taxa de amostragem medida: %.0f SPS (nominal %.0f)\n', fsMedida, FS);
