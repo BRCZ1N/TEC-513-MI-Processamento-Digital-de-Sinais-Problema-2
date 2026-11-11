@@ -9,11 +9,6 @@ Etapas:
   4) Comparação na frequência (FFT)
   5) Erros estáticos: offset, ganho, DNL, INL, códigos ausentes, monotonicidade
 
-Convenção do datasheet (seção 26.6.4): a transição ideal do código k-1 para k
-fica em (k - 0,5)·Q, ou seja, a primeira transição ideal está em 0,5 LSB.
-
-Instalação:  pip install -r requirements.txt
-Execução:    python analise_adc.py
 """
 
 from pathlib import Path
@@ -191,7 +186,7 @@ def grafico_frequencia(v_real, v_ideal, f_est):
     ref = x_ideal.max()                     # 0 dB = fundamental ideal
     freq = np.fft.rfftfreq(M, 1 / FS)
 
-    # Espectro completo
+    # Espectros sobrepostos (real x ideal)
     fig, ax = plt.subplots(figsize=(9, 4.5))
     ax.vlines(freq, PISO_DB, em_db(x_real, ref), colors="b", label="Real")
     ax.vlines(freq, PISO_DB, em_db(x_ideal, ref), colors="r", label="Ideal")
@@ -200,6 +195,22 @@ def grafico_frequencia(v_real, v_ideal, f_est):
     ax.grid(True)
     ax.legend()
     salvar(fig, "fig2_fft.png")
+
+    # Espectros separados (mesma escala e mesma referência de 0 dB)
+    grafico_espectro(freq, em_db(x_real, ref), "b",
+                     "Espectro do sinal real ", "fig2a_fft_real.png")
+    grafico_espectro(freq, em_db(x_ideal, ref), "r",
+                     "Espectro do sinal ideal", "fig2b_fft_ideal.png")
+
+
+def grafico_espectro(freq, mag_db, cor, titulo, arquivo):
+    """Um espectro sozinho, com os mesmos eixos do gráfico sobreposto."""
+    fig, ax = plt.subplots(figsize=(9, 4.5))
+    ax.vlines(freq, PISO_DB, mag_db, colors=cor)
+    ax.set(xlim=(0, F_MAX_FFT), ylim=(PISO_DB, 5), xlabel="Frequência (Hz)",
+           ylabel="Magnitude (dB)", title=titulo)
+    ax.grid(True)
+    salvar(fig, arquivo)
 
 
 # =============================================================================
