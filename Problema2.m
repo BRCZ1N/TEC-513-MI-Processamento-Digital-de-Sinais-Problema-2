@@ -8,14 +8,9 @@
 %    3) Comparação no tempo (estilo osciloscópio)
 %    4) Comparação na frequência (FFT)
 %    5) Erros estáticos: offset, ganho, DNL, INL, códigos ausentes, monotonicidade
-%    6) Resumo dos resultados e características dinâmicas
 %
-%  Convenções (datasheet ATmega2560, seção 26.6.4, p. 277-278):
-%    - Transição ideal k-1 -> k ocorre em (k - 0,5)·Q  (1ª transição em 0,5 LSB)
-%    - Offset: 1ª transição real x ideal, em LSB
-%    - Ganho: após remover o offset, última transição real x ideal
-%      (ideal = 1,5 LSB abaixo do fundo de escala), em LSB
-%    - INL e DNL pelo método dos extremos (reta entre 1ª e última transição)
+%  Resolução, Q, faixa dinâmica, prescaler, tempo de conversão, taxa máxima
+%  e definições dos erros estão calculados/explicados nos slides.
 %  =========================================================================
 clc;
 clear;
@@ -58,13 +53,9 @@ VIN_MAX   = 5.0;     % máximo da triangular medido no osciloscópio (V)
 F_ENTRADA = 100;     % frequência ajustada no gerador (Hz)
 
 % --- Configuração do Arduino (deve bater com o .ino) ---
-F_CPU          = 16e6;   % clock do ATmega2560 (Hz)
-PRESCALER_TMR1 = 8;      % prescaler do Timer1 (CS11)
-OCR1A          = 38;     % valor de comparação do Timer1 (modo CTC)
-PRESCALER_ADC  = 16;     % prescaler do ADC (ADPS2) -> clock do ADC = 1 MHz
-CICLOS_CONV    = 13.5;   % ciclos por conversão em auto-trigger (Tabela 26-1)
-NBITS          = 8;      % resolução usada (ADLAR = 1, leitura só de ADCH)
-BAUD           = 2e6;    % igual ao Serial.begin() do .ino
+FS    = 51282;   % taxa de amostragem (SPS) - Timer1 com OCR1A = 38 (ver slides)
+NBITS = 8;       % resolução usada (ADLAR = 1, leitura só de ADCH)
+BAUD  = 2e6;     % igual ao Serial.begin() do .ino
 
 % --- Ajustes da análise ---
 AMOSTRAS_DESCARTE = 10;   % amostras iniciais descartadas (1ª conversão leva
@@ -78,15 +69,11 @@ JANELA_TEMPO_MS = 30;     % trecho mostrado na visão geral (ms)
 MEIA_JANELA     = 8;      % zoom: amostras antes/depois do ponto central
 F_MAX_GRAFICO   = 1000;   % limite do eixo de frequência (Hz)
 PISO_DB         = -100;   % piso dos gráficos em dB
-N_HARMONICAS    = 10;     % harmônicas mostradas (1f a 10f)
 N_BORDA         = 8;      % códigos mostrados no início/fim da curva de transferência
+PERIODOS_ENTRADA = 3;     % períodos mostrados na figura de entrada
 RESOLUCAO_FIG   = '-r150';% resolução das figuras salvas (dpi)
 
 % --- Grandezas derivadas (calculadas, não digitadas) ---
-FS        = F_CPU/(PRESCALER_TMR1*(1 + OCR1A));  % taxa de amostragem (SPS)
-F_ADC     = F_CPU/PRESCALER_ADC;                 % clock do ADC (Hz)
-T_CONV    = CICLOS_CONV/F_ADC;                   % tempo de conversão (s)
-FS_MAX    = 1/T_CONV;                            % taxa máxima teórica (SPS)
 NCODIGOS  = 2^NBITS;                             % 256 códigos (0 a 255)
 COD_MAX   = NCODIGOS - 1;                        % código de fundo de escala
 Q         = VREF/NCODIGOS;                       % degrau de quantização (V)
@@ -146,6 +133,48 @@ N     = numel(codigos);
 t     = (0:N-1)'/FS;          % instante de cada amostra (s)
 tMs   = t*1e3;                % o mesmo, em ms (para os gráficos)
 vReal = codigos*Q;            % tensão equivalente de cada código
+
+
+%% ===================== 1b) FIGURA DE ENTRADA ==============================
+% O mesmo trecho do sinal capturado (PERIODOS_ENTRADA períodos) em três formas:
+%   x(t)          : tensão equivalente (código*Q, com Q = VREF/2^NBITS)
+%   x[n]          : amostras discretas, em código (0 a 255)
+%   x[n] segurado : retenção de ordem zero (cada código vale até a próxima amostra)
+% Obs.: com ~513 amostras por período (51282/100), as hastes de x[n] ficam
+% coladas e os degraus de 1 LSB não aparecem nessa escala (usar o zoom do Octave).
+nAmostras = min(round(PERIODOS_ENTRADA*FS/F_ENTRADA), N);
+n         = (0:nAmostras-1)';           % índice das amostras
+xn        = codigos(1:nAmostras);       % códigos do trecho
+
+figure(3);
+subplot(3,1,1);
+plot(tMs(1:nAmostras), vReal(1:nAmostras), 'b');
+grid on;
+xlim([0 tMs(nAmostras)]);
+ylim([0 VREF]);
+xlabel('t (ms)');
+ylabel('Tensão (V)');
+title('Sinal capturado x(t)');
+
+subplot(3,1,2);
+stem(n, xn, 'b', 'markersize', 2);
+grid on;
+xlim([0 nAmostras-1]);
+ylim([0 NCODIGOS]);
+xlabel('n');
+ylabel('Código');
+title('x[n]');
+
+subplot(3,1,3);
+stairs(n, xn, 'b');
+grid on;
+xlim([0 nAmostras-1]);
+ylim([0 NCODIGOS]);
+xlabel('n');
+ylabel('Código');
+title('x[n] segurado');
+
+print(3, 'fig3_entrada.png', '-dpng', RESOLUCAO_FIG);
 
 
 %% ===================== 2) TRIANGULAR IDEAL SIMULADA (requisito 5) =========
@@ -220,8 +249,7 @@ print(1, 'fig1_osciloscopio.png', '-dpng', RESOLUCAO_FIG);
 %% ===================== 4) COMPARAÇÃO NA FREQUÊNCIA (requisito 4) ==========
 % A FFT supõe que o trecho analisado se repete. Cortando o sinal em um número
 % INTEIRO de períodos, cada harmônica cai exatamente em um bin e não há
-% vazamento espectral. Com nPeriodos períodos no trecho, a harmônica h fica
-% no bin h·nPeriodos (índice h·nPeriodos + 1, pois o Octave começa em 1).
+% vazamento espectral.
 % O nível médio (DC) é removido para não dominar o gráfico.
 amostrasPorPeriodo = FS/fEst;
 nPeriodos = floor(N/amostrasPorPeriodo);
@@ -235,7 +263,7 @@ metade = 1:floor(M/2);              % só frequências positivas
 ref    = max(xIdeal);               % 0 dB = fundamental ideal
 emDb   = @(x) 20*log10(x/ref + eps);% eps evita log(0)
 
-% 4a) Espectro completo até F_MAX_GRAFICO
+% Espectro até F_MAX_GRAFICO
 figure(2);
 stem(freq(metade), emDb(xReal(metade)),  'b', 'marker', 'none', 'basevalue', PISO_DB);
 hold on;
@@ -248,25 +276,6 @@ ylabel('Magnitude (dB)');
 title(sprintf('Espectro: real x ideal (%d períodos inteiros)', nPeriodos));
 legend('Real', 'Ideal');
 print(2, 'fig2_fft.png', '-dpng', RESOLUCAO_FIG);
-
-% 4b) Só as harmônicas (a triangular ideal tem apenas as ímpares, caindo
-%     com 1/h^2; as pares ideais ficam no piso)
-h    = 1:N_HARMONICAS;
-bins = h*nPeriodos + 1;
-figure(3);
-stem(h*fEst, emDb(xReal(bins)), 'b', 'filled', 'basevalue', PISO_DB);
-hold on;
-plot(h*fEst, emDb(xIdeal(bins)), 'rx', 'markersize', 10, 'linewidth', 2);
-grid on;
-set(gca, 'xtick', h*fEst, ...
-         'xticklabel', arrayfun(@(x) sprintf('%df', x), h, 'UniformOutput', false));
-xlim([0 (N_HARMONICAS + 1)*fEst]);
-ylim([PISO_DB 5]);
-xlabel('Frequência (Hz)');
-ylabel('Magnitude (dB)');
-title('Harmônicas: real x ideal');
-legend('Real', 'Ideal');
-print(3, 'fig3_harmonicas.png', '-dpng', RESOLUCAO_FIG);
 
 
 %% ===================== 5) ERROS ESTÁTICOS (requisito 5) ===================
@@ -377,33 +386,54 @@ xlabel('Entrada (V)');
 title(sprintf('Ganho: %.2f LSB (%.2f%%)', ganhoLsb, ganhoPct));
 print(6, 'fig6_offset_ganho.png', '-dpng', RESOLUCAO_FIG);
 
+% --- Figura: monotonicidade nas subidas ---
+% Esquerda: código x tensão de entrada. Se for monotônico, a escada só sobe.
+% Direita: variação do código entre amostras vizinhas da mesma subida.
+% Barras à esquerda da linha tracejada seriam quedas reais.
+delta = diff(codSubida);
+delta = delta(mesmaRampa);                       % ignora o salto entre rampas
+[valores, ~, idx] = unique(delta);
+contagem = accumarray(idx, 1);
+queda    = valores < -TOL_QUEDA_LSB;
 
-%% ===================== 6) RESUMO (requisitos 5 e 6) =====================
-% A taxa de amostragem "medida" compara a frequência nominal do gerador com
-% a frequência que o ajuste encontrou nos dados: se o gerador está certo,
-% qualquer diferença vem da taxa real do Arduino.
-% O tempo de conversão NÃO é medido aqui: isso é feito no Arduino
-% (ex.: alternar um pino na ISR do ADC e medir no osciloscópio).
-fsMedida = FS*F_ENTRADA/fEst;
+figure(7);
+subplot(1,2,1);
+plot(vIdeal(naSubida), codSubida, 'b.', 'markersize', 4);
+grid on;
+xlabel('Entrada (V)');
+ylabel('Código');
+title('Código x entrada (subidas)');
 
-printf('\n--- Erros estáticos (Q = %.2f mV) ---\n', Q*1e3);
-printf('Offset: %.2f LSB\n', offsetLsb);
-printf('Ganho: %.2f LSB (%.2f%%)\n', ganhoLsb, ganhoPct);
-printf('DNL: %.2f a %.2f LSB\n', min(dnl), max(dnl));
-printf('INL: %.2f a %.2f LSB\n', min(inl), max(inl));
-printf('Amostras por código (média): %.1f -> resolução da DNL ~ %.2f LSB\n', ...
-       amostrasPorCodigo, 1/amostrasPorCodigo);
-printf('Códigos ausentes: %d\n', numel(ausentes));
-if ~isempty(ausentes)
-  printf('  Códigos: %s\n', mat2str(ausentes));
+subplot(1,2,2);
+bar(valores(~queda), contagem(~queda), 0.8, 'facecolor', 'b');
+hold on;
+if any(queda)
+  bar(valores(queda), contagem(queda), 0.8, 'facecolor', 'r');
 end
-printf('Quedas > %d LSB nas subidas: %d\n', TOL_QUEDA_LSB, quedas);
-printf('Monotônico: %d (1 = sim)\n', monotonico);
+plot([1 1]*(-TOL_QUEDA_LSB - 0.5), ylim, 'r--');
+grid on;
+xlabel('\Delta código entre amostras (LSB)');
+ylabel('Ocorrências');
+title(sprintf('Variação do código nas subidas (%d quedas)', quedas));
+print(7, 'fig7_monotonicidade.png', '-dpng', RESOLUCAO_FIG);
+% --- Figura: zoom da curva de transferência no pior DNL ---
+% Mesma ideia das figuras de livro (DNL e INL vistos na escada), mas com os
+% dados reais. A referência é a reta entre a 1ª e a última transição (a mesma
+% usada no cálculo de DNL e INL), então offset e ganho já estão descontados.
+% Em stairs(x, y), o degrau do código y(k) começa na transição x(k).
+[~, codPior] = max(abs(dnl));                    % dnl(k) = largura do código k
+cods = (max(codPior-5, 1):min(codPior+5, COD_MAX-1))';
 
-printf('\n--- Características dinâmicas ---\n');
-printf('Clock do ADC: %.0f kHz\n', F_ADC/1e3);
-printf('Tempo de conversão (teórico): %.1f us\n', T_CONV*1e6);
-printf('Taxa máxima teórica: %.0f SPS\n', FS_MAX);
-printf('Taxa de amostragem nominal: %.0f SPS\n', FS);
-printf('Taxa de amostragem medida: %.0f SPS\n', fsMedida);
-printf('Faixa dinâmica (%d bits): %.1f dB\n', NBITS, 20*log10(NCODIGOS));
+figure(8);
+stairs(vTransicao(cods), cods, 'b', 'linewidth', 1.5);
+hold on;
+stairs(reta(cods), cods, 'r--', 'linewidth', 1.2);
+plot(vTransicao(codPior + [0 1]), [codPior codPior], 'k', 'linewidth', 4);
+grid on;
+xlabel('Entrada (V)');
+ylabel('Código');
+title(sprintf('Zoom no código %d: DNL = %.2f LSB, INL = %.2f LSB', ...
+              codPior, dnl(codPior), inl(codPior)));
+legend('Real', 'Ideal (reta dos extremos)', 'Degrau com maior DNL', ...
+       'location', 'northwest');
+print(8, 'fig8_zoom_dnl_inl.png', '-dpng', RESOLUCAO_FIG);
