@@ -67,7 +67,7 @@ PASSO_FASE        = 0.01; % resolução da busca inicial de fase (fração do pe
 % --- Ajustes dos gráficos ---
 JANELA_TEMPO_MS = 30;     % trecho mostrado na visão geral (ms)
 MEIA_JANELA     = 8;      % zoom: amostras antes/depois do ponto central
-F_MAX_GRAFICO   = 1000;   % limite do eixo de frequência (Hz)
+F_MAX_GRAFICO   = 2000;   % limite do eixo de frequência (Hz)
 PISO_DB         = -100;   % piso dos gráficos em dB
 N_BORDA         = 8;      % códigos mostrados no início/fim da curva de transferência
 PERIODOS_ENTRADA = 3;     % períodos mostrados na figura de entrada
@@ -321,10 +321,9 @@ offsetV   = vTransicao(1) - vTransIdeal(1);
 offsetLsb = offsetV/Q;
 
 % --- 5.5 Ganho: última transição, já sem o offset, x ideal ---
-% Em LSB (definição do datasheet) e em % (inclinação real x ideal).
+% Em LSB (definição do datasheet).
 ganhoLsb = ((vTransicao(end) - offsetV) - vTransIdeal(end))/Q;
 qReal    = (vTransicao(end) - vTransicao(1))/(COD_MAX - 1);   % degrau médio real
-ganhoPct = (qReal/Q - 1)*100;
 
 % --- 5.6 DNL (códigos 1..254): largura de cada degrau / degrau médio - 1 ---
 % Usar o degrau médio real (e não Q) remove offset e ganho da DNL.
@@ -398,7 +397,7 @@ hold on;
 stairs(vTransIdeal(fimCod), fimCod, 'r--');
 grid on;
 xlabel('Entrada (V)');
-title(sprintf('Ganho: %.2f LSB (%.2f%%)', ganhoLsb, ganhoPct));
+title(sprintf('Ganho: %.2f LSB', ganhoLsb));
 print(6, 'fig6_offset_ganho.png', '-dpng', RESOLUCAO_FIG);
 
 % --- Figura: monotonicidade nas subidas ---
@@ -417,11 +416,12 @@ print(7, 'fig7_monotonicidade.png', '-dpng', RESOLUCAO_FIG);
 %% ===================== 6) RESUMO ==========================================
 printf('\n--- Erros estáticos (1 LSB = %.2f mV) ---\n', Q*1e3);
 printf('Offset:            %+.2f LSB\n', offsetLsb);
-printf('Ganho:             %+.2f LSB (%+.2f %%)\n', ganhoLsb, ganhoPct);
+printf('Ganho:             %+.2f LSB\n', ganhoLsb);
 printf('DNL:               %+.2f a %+.2f LSB\n', min(dnl), max(dnl));
 printf('INL:               %+.2f a %+.2f LSB\n', min(inl), max(inl));
 printf('Códigos ausentes:  %d\n', numel(ausentes));
-printf('Monotônico:        %s (%d quedas)\n', ifelse_str(monotonico), quedas);
+if monotonico, txt = 'sim'; else, txt = 'não'; end
+printf('Monotônico:        %s (%d quedas)\n', txt, quedas);
 printf('Amostras/código:   %.1f (incerteza da DNL ~ %.2f LSB)\n', ...
        mean(histograma(2:COD_MAX)), 1/sqrt(mean(histograma(2:COD_MAX))));
 printf('\n--- Características dinâmicas ---\n');
