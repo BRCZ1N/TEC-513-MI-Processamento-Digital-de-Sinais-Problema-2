@@ -264,18 +264,35 @@ ref    = max(xIdeal);               % 0 dB = fundamental ideal
 emDb   = @(x) 20*log10(x/ref + eps);% eps evita log(0)
 
 % Espectro até F_MAX_GRAFICO
+% O ideal é desenhado PRIMEIRO e o real POR CIMA (com marcador). Se a ordem
+% for a inversa, a haste vermelha esconde o pico real nas harmônicas e só
+% aparecem as raias vizinhas do sinal real (ruído de quantização, ~-50 dB).
 figure(2);
-stem(freq(metade), emDb(xReal(metade)),  'b', 'marker', 'none', 'basevalue', PISO_DB);
+stem(freq(metade), emDb(xIdeal(metade)), 'r', 'marker', 'none', ...
+     'basevalue', PISO_DB, 'linewidth', 2);
 hold on;
-stem(freq(metade), emDb(xIdeal(metade)), 'r', 'marker', 'none', 'basevalue', PISO_DB);
+stem(freq(metade), emDb(xReal(metade)), 'b', 'marker', 'o', ...
+     'markersize', 3, 'basevalue', PISO_DB);
 grid on;
 xlim([0 F_MAX_GRAFICO]);
 ylim([PISO_DB 5]);
 xlabel('Frequência (Hz)');
 ylabel('Magnitude (dB)');
-title(sprintf('Espectro: real x ideal (%d períodos inteiros)', nPeriodos));
-legend('Real', 'Ideal');
+title('Espectro: real x ideal');
+legend('Ideal', 'Real');
 print(2, 'fig2_fft.png', '-dpng', RESOLUCAO_FIG);
+
+% Conferência numérica: nível das harmônicas ímpares (1ª, 3ª, 5ª, 7ª, 9ª).
+% Com M = nPeriodos períodos inteiros, a harmônica h cai no bin h*nPeriodos
+% (índice h*nPeriodos + 1 no Octave). Triangular ideal: 3ª ~ -19 dB,
+% 5ª ~ -28 dB, 7ª ~ -34 dB, 9ª ~ -38 dB em relação à fundamental.
+h   = 1:2:9;
+bin = h*nPeriodos + 1;
+bin = bin(bin <= numel(metade));
+h   = h(1:numel(bin));
+printf('\nHarm.   f (Hz)   Real (dB)  Ideal (dB)\n');
+printf('%4d  %8.1f  %9.2f  %10.2f\n', ...
+       [h; freq(bin)'; emDb(xReal(bin))'; emDb(xIdeal(bin))']);
 
 
 %% ===================== 5) ERROS ESTÁTICOS (requisito 5) ===================
@@ -292,7 +309,6 @@ completa = rampa > rampa(1) & rampa < rampa(end);
 
 % --- 5.2 Histograma: histograma(k+1) = número de amostras do código k ---
 histograma = accumarray(codigos(completa) + 1, 1, [NCODIGOS 1]);
-amostrasPorCodigo = mean(histograma(2:COD_MAX));   % média, sem as bordas
 
 % --- 5.3 Tensões de transição reais ---
 % A fração acumulada de amostras até o código k-1 é a fração da faixa
@@ -338,8 +354,7 @@ grid on;
 xlim([-1 NCODIGOS]);
 xlabel('Código');
 ylabel('Ocorrências');
-title(sprintf('Histograma de códigos (%d ausentes, média %.1f amostras/código)', ...
-              numel(ausentes), amostrasPorCodigo));
+title(sprintf('Histograma de códigos (%d ausentes)', numel(ausentes)));
 print(4, 'fig4_histograma.png', '-dpng', RESOLUCAO_FIG);
 
 % --- Figura: DNL e INL ---
@@ -387,53 +402,28 @@ title(sprintf('Ganho: %.2f LSB (%.2f%%)', ganhoLsb, ganhoPct));
 print(6, 'fig6_offset_ganho.png', '-dpng', RESOLUCAO_FIG);
 
 % --- Figura: monotonicidade nas subidas ---
-% Esquerda: código x tensão de entrada. Se for monotônico, a escada só sobe.
-% Direita: variação do código entre amostras vizinhas da mesma subida.
-% Barras à esquerda da linha tracejada seriam quedas reais.
-delta = diff(codSubida);
-delta = delta(mesmaRampa);                       % ignora o salto entre rampas
-[valores, ~, idx] = unique(delta);
-contagem = accumarray(idx, 1);
-queda    = valores < -TOL_QUEDA_LSB;
-
+% Código x tensão de entrada. Se o ADC for monotônico, a escada só sobe.
+% O número de quedas (calculado em 5.9) vai no título.
 figure(7);
-subplot(1,2,1);
 plot(vIdeal(naSubida), codSubida, 'b.', 'markersize', 4);
 grid on;
+xlim([0 VREF]);
+ylim([0 NCODIGOS]);
 xlabel('Entrada (V)');
 ylabel('Código');
-title('Código x entrada (subidas)');
-
-subplot(1,2,2);
-bar(valores(~queda), contagem(~queda), 0.8, 'facecolor', 'b');
-hold on;
-if any(queda)
-  bar(valores(queda), contagem(queda), 0.8, 'facecolor', 'r');
-end
-plot([1 1]*(-TOL_QUEDA_LSB - 0.5), ylim, 'r--');
-grid on;
-xlabel('\Delta código entre amostras (LSB)');
-ylabel('Ocorrências');
-title(sprintf('Variação do código nas subidas (%d quedas)', quedas));
+title(sprintf('Código x entrada nas subidas (%d quedas)', quedas));
 print(7, 'fig7_monotonicidade.png', '-dpng', RESOLUCAO_FIG);
-% --- Figura: zoom da curva de transferência no pior DNL ---
-% Mesma ideia das figuras de livro (DNL e INL vistos na escada), mas com os
-% dados reais. A referência é a reta entre a 1ª e a última transição (a mesma
-% usada no cálculo de DNL e INL), então offset e ganho já estão descontados.
-% Em stairs(x, y), o degrau do código y(k) começa na transição x(k).
-[~, codPior] = max(abs(dnl));                    % dnl(k) = largura do código k
-cods = (max(codPior-5, 1):min(codPior+5, COD_MAX-1))';
 
-figure(8);
-stairs(vTransicao(cods), cods, 'b', 'linewidth', 1.5);
-hold on;
-stairs(reta(cods), cods, 'r--', 'linewidth', 1.2);
-plot(vTransicao(codPior + [0 1]), [codPior codPior], 'k', 'linewidth', 4);
-grid on;
-xlabel('Entrada (V)');
-ylabel('Código');
-title(sprintf('Zoom no código %d: DNL = %.2f LSB, INL = %.2f LSB', ...
-              codPior, dnl(codPior), inl(codPior)));
-legend('Real', 'Ideal (reta dos extremos)', 'Degrau com maior DNL', ...
-       'location', 'northwest');
-print(8, 'fig8_zoom_dnl_inl.png', '-dpng', RESOLUCAO_FIG);
+%% ===================== 6) RESUMO ==========================================
+printf('\n--- Erros estáticos (1 LSB = %.2f mV) ---\n', Q*1e3);
+printf('Offset:            %+.2f LSB\n', offsetLsb);
+printf('Ganho:             %+.2f LSB (%+.2f %%)\n', ganhoLsb, ganhoPct);
+printf('DNL:               %+.2f a %+.2f LSB\n', min(dnl), max(dnl));
+printf('INL:               %+.2f a %+.2f LSB\n', min(inl), max(inl));
+printf('Códigos ausentes:  %d\n', numel(ausentes));
+printf('Monotônico:        %s (%d quedas)\n', ifelse_str(monotonico), quedas);
+printf('Amostras/código:   %.1f (incerteza da DNL ~ %.2f LSB)\n', ...
+       mean(histograma(2:COD_MAX)), 1/sqrt(mean(histograma(2:COD_MAX))));
+printf('\n--- Características dinâmicas ---\n');
+printf('Faixa dinâmica:    %.1f dB\n', 20*log10(NCODIGOS));
+printf('fs medida:         %.0f SPS (nominal %d)\n', FS*F_ENTRADA/fEst, FS);
